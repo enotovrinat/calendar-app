@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Календарь событий</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+        }
+        .calendar {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 5px;
+        }
+        .calendar-day {
+            aspect-ratio: 1;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .calendar-day:hover {
+            background-color: #f8f9fa;
+        }
+        .calendar-day.today {
+            background-color: #e9ecef;
+            font-weight: bold;
+        }
+        .calendar-day.selected {
+            background-color: #007bff;
+            color: white;
+        }
+        .calendar-day.has-events {
+            border-bottom: 3px solid #28a745;
+        }
+        .calendar-day.other-month {
+            color: #adb5bd;
+        }
+        .event-list {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .event-item {
+            background: white;
+            border-left: 4px solid #007bff;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .event-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255,255,255,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .error-message {
+            color: #dc3545;
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }
+        .success-message {
+            color: #28a745;
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-10">
+                <div id="auth-section" class="text-center my-4">
+                    <h1 class="mb-4">Календарь событий</h1>
+                    <div id="login-button" style="display: none;">
+                        <button class="btn btn-primary" onclick="handleAuth()">
+                            <i class="fab fa-google me-2"></i>Войти через Google
+                        </button>
+                    </div>
+                    <div id="user-info" style="display: none;">
+                        <p>Вы вошли как <span id="user-email"></span></p>
+                        <button class="btn btn-outline-danger" onclick="handleLogout()">Выйти</button>
+                    </div>
+                </div>
+
+                <div id="calendar-section" style="display: none;">
+                    <div class="calendar">
+                        <div class="calendar-header">
+                            <button class="btn btn-outline-primary" onclick="previousMonth()">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <h2 id="current-month" class="mb-0"></h2>
+                            <button class="btn btn-outline-primary" onclick="nextMonth()">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                        <div class="calendar-grid" id="weekdays">
+                            <div class="text-center">Пн</div>
+                            <div class="text-center">Вт</div>
+                            <div class="text-center">Ср</div>
+                            <div class="text-center">Чт</div>
+                            <div class="text-center">Пт</div>
+                            <div class="text-center">Сб</div>
+                            <div class="text-center">Вс</div>
+                        </div>
+                        <div class="calendar-grid" id="calendar-days"></div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mt-4">
+                        <h3>События</h3>
+                        <button class="btn btn-success" onclick="showEventModal()">
+                            <i class="fas fa-plus me-2"></i>Добавить событие
+                        </button>
+                    </div>
+                    <div id="events-list" class="event-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для событий -->
+    <div class="modal fade" id="eventModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="eventModalLabel">Новое событие</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="eventForm">
+                        <div class="mb-3">
+                            <label for="eventTitle" class="form-label">Название</label>
+                            <input type="text" class="form-control" id="eventTitle" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="eventDescription" class="form-label">Описание</label>
+                            <textarea class="form-control" id="eventDescription" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="eventStart" class="form-label">Начало</label>
+                            <input type="datetime-local" class="form-control" id="eventStart" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="eventEnd" class="form-label">Окончание</label>
+                            <input type="datetime-local" class="form-control" id="eventEnd" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" onclick="saveEvent()">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="loading" style="display: none;">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Загрузка...</span>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentDate = new Date();
+        let selectedDate = null;
+        let events = [];
+        let eventModal = null;
+        let currentUser = null;
+
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Page loaded');
+            eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
+            
+            // Проверяем токен в URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('token');
+            
+            if (token) {
+                console.log('Token found in URL');
+                localStorage.setItem('token', token);
+                window.history.replaceState({}, document.title, '/');
+            }
+            
+            checkAuth();
+        });
+
+        // Проверка авторизации
+        async function checkAuth() {
+            console.log('Checking auth...');
+            const token = localStorage.getItem('token');
+            
+            if (!token) {
+                console.log('No token found');
+                showLoginButton();
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/events', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    console.log('Auth check successful');
+                    showCalendar();
+                } else {
+                    console.log('Auth check failed');
+                    handleLogout();
+                }
+            } catch (error) {
+                console.error('Auth check error:', error);
+                handleLogout();
+            }
+        }
+
+        // Показать кнопку входа
+        function showLoginButton() {
+            document.getElementById('login-button').style.display = 'block';
+            document.getElementById('user-info').style.display = 'none';
+            document.getElementById('calendar-section').style.display = 'none';
+        }
+
+        // Обработка авторизации
+        function handleAuth() {
+            console.log('Starting auth process');
+            window.location.href = '/api/auth/google';
+        }
+
+        // Обработка выхода
+        function handleLogout() {
+            console.log('Logging out');
+            localStorage.removeItem('token');
+            showLoginButton();
+        }
+
+        // Показать календарь
+        async function showCalendar() {
+            console.log('Showing calendar');
+            document.getElementById('login-button').style.display = 'none';
+            document.getElementById('user-info').style.display = 'block';
+            document.getElementById('calendar-section').style.display = 'block';
+            
+            renderCalendar();
+            await loadEvents();
+        }
+
+        // Загрузка событий
+        async function loadEvents() {
+            console.log('Loading events');
+            showLoading();
+            
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch('/api/events', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) throw new Error('Failed to load events');
+                
+                events = await response.json();
+                console.log('Events loaded:', events.length);
+                renderCalendar();
+                renderEvents();
+            } catch (error) {
+                console.error('Error loading events:', error);
+                showError('Ошибка при загрузке событий');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Отображение календаря
+        function renderCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            
+            document.getElementById('current-month').textContent = 
+                new Date(year, month).toLocaleString('ru', { month: 'long', year: 'numeric' });
+
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const daysInMonth = lastDay.getDate();
+            
+            let firstDayOfWeek = firstDay.getDay() || 7;
+            firstDayOfWeek--; // Преобразуем в формат Пн-Вс (0-6)
+
+            const calendarDays = document.getElementById('calendar-days');
+            calendarDays.innerHTML = '';
+
+            // Дни предыдущего месяца
+            const prevMonth = new Date(year, month, 0);
+            const daysInPrevMonth = prevMonth.getDate();
+            for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+                const day = daysInPrevMonth - i;
+                const dayElement = createDayElement(new Date(year, month - 1, day), true);
+                calendarDays.appendChild(dayElement);
+            }
+
+            // Дни текущего месяца
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayElement = createDayElement(new Date(year, month, day), false);
+                calendarDays.appendChild(dayElement);
+            }
+
+            // Дни следующего месяца
+            const remainingDays = 42 - (firstDayOfWeek + daysInMonth);
+            for (let day = 1; day <= remainingDays; day++) {
+                const dayElement = createDayElement(new Date(year, month + 1, day), true);
+                calendarDays.appendChild(dayElement);
+            }
+        }
+
+        // Создание элемента дня
+        function createDayElement(date, isOtherMonth) {
+            const dayElement = document.createElement('div');
+            dayElement.className = 'calendar-day';
+            if (isOtherMonth) dayElement.classList.add('other-month');
+            
+            const today = new Date();
+            if (date.toDateString() === today.toDateString()) {
+                dayElement.classList.add('today');
+            }
+            
+            if (selectedDate && date.toDateString() === selectedDate.toDateString()) {
+                dayElement.classList.add('selected');
+            }
+
+            // Проверяем наличие событий в этот день
+            const hasEvents = events.some(event => {
+                const eventDate = new Date(event.start.dateTime);
+                return eventDate.toDateString() === date.toDateString();
+            });
+            if (hasEvents) dayElement.classList.add('has-events');
+
+            dayElement.textContent = date.getDate();
+            dayElement.addEventListener('click', () => selectDate(date));
+            
+            return dayElement;
+        }
+
+        // Выбор даты
+        function selectDate(date) {
+            selectedDate = date;
+            renderCalendar();
+            renderEvents();
+        }
+
+        // Предыдущий месяц
+        function previousMonth() {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
+        }
+
+        // Следующий месяц
+        function nextMonth() {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        }
+
+        // Показать модальное окно создания события
+        function showEventModal(event = null) {
+            const modalTitle = document.getElementById('eventModalLabel');
+            const form = document.getElementById('eventForm');
+            
+            if (event) {
+                modalTitle.textContent = 'Редактировать событие';
+                form.dataset.eventId = event.id;
+                document.getElementById('eventTitle').value = event.summary;
+                document.getElementById('eventDescription').value = event.description || '';
+                document.getElementById('eventStart').value = new Date(event.start.dateTime)
+                    .toISOString().slice(0, 16);
+                document.getElementById('eventEnd').value = new Date(event.end.dateTime)
+                    .toISOString().slice(0, 16);
+            } else {
+                modalTitle.textContent = 'Новое событие';
+                form.dataset.eventId = '';
+                form.reset();
+                
+                if (selectedDate) {
+                    const startDate = new Date(selectedDate);
+                    startDate.setHours(9, 0);
+                    const endDate = new Date(selectedDate);
+                    endDate.setHours(10, 0);
+                    
+                    document.getElementById('eventStart').value = startDate.toISOString().slice(0, 16);
+                    document.getElementById('eventEnd').value = endDate.toISOString().slice(0, 16);
+                }
+            }
+            
+            eventModal.show();
+        }
+
+        // Сохранение события
+        async function saveEvent() {
+            console.log('Saving event');
+            const form = document.getElementById('eventForm');
+            const eventId = form.dataset.eventId;
+            const title = document.getElementById('eventTitle').value;
+            const description = document.getElementById('eventDescription').value;
+            const start = document.getElementById('eventStart').value;
+            const end = document.getElementById('eventEnd').value;
+
+            if (!title || !start || !end) {
+                showError('Пожалуйста, заполните все обязательные поля');
+                return;
+            }
+
+            const event = {
+                title,
+                description,
+                start,
+                end
+            };
+
+            showLoading();
+            try {
+                const token = localStorage.getItem('token');
+                const url = eventId ? `/api/events/${eventId}` : '/api/events';
+                const method = eventId ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(event)
+                });
+
+                if (!response.ok) throw new Error('Failed to save event');
+                
+                await loadEvents();
+                eventModal.hide();
+                showSuccess(eventId ? 'Событие обновлено' : 'Событие создано');
+            } catch (error) {
+                console.error('Error saving event:', error);
+                showError('Ошибка при сохранении события');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Удаление события
+        async function deleteEvent(eventId) {
+            if (!confirm('Вы уверены, что хотите удалить это событие?')) return;
+            
+            showLoading();
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch(`/api/events/${eventId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) throw new Error('Failed to delete event');
+                
+                await loadEvents();
+                showSuccess('Событие удалено');
+            } catch (error) {
+                console.error('Error deleting event:', error);
+                showError('Ошибка при удалении события');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Отображение списка событий
+        function renderEvents() {
+            const eventsList = document.getElementById('events-list');
+            eventsList.innerHTML = '';
+
+            const filteredEvents = selectedDate ? events.filter(event => {
+                const eventDate = new Date(event.start.dateTime);
+                return eventDate.toDateString() === selectedDate.toDateString();
+            }) : events;
+
+            if (filteredEvents.length === 0) {
+                eventsList.innerHTML = '<p class="text-muted">Нет событий</p>';
+                return;
+            }
+
+            filteredEvents
+                .sort((a, b) => new Date(a.start.dateTime) - new Date(b.start.dateTime))
+                .forEach(event => {
+                    const start = new Date(event.start.dateTime);
+                    const end = new Date(event.end.dateTime);
+                    
+                    const eventElement = document.createElement('div');
+                    eventElement.className = 'event-item';
+                    eventElement.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h5 class="mb-1">${event.summary}</h5>
+                                <p class="mb-1 text-muted">
+                                    ${start.toLocaleString('ru')} - ${end.toLocaleString('ru')}
+                                </p>
+                                ${event.description ? `<p class="mb-0">${event.description}</p>` : ''}
+                            </div>
+                            <div class="event-actions">
+                                <button class="btn btn-sm btn-outline-primary" onclick="showEventModal(${JSON.stringify(event)})">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteEvent('${event.id}')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    eventsList.appendChild(eventElement);
+                });
+        }
+
+        // Управление индикатором загрузки
+        function showLoading() {
+            document.getElementById('loading').style.display = 'flex';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // Отображение сообщений
+        function showError(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'error-message';
+            alertDiv.textContent = message;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.row'));
+            setTimeout(() => alertDiv.remove(), 5000);
+        }
+
+        function showSuccess(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'success-message';
+            alertDiv.textContent = message;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.row'));
+            setTimeout(() => alertDiv.remove(), 5000);
+        }
+    </script>
+</body>
+</html> 
